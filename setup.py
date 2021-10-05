@@ -6,7 +6,7 @@ with open("requirements.txt", "r") as fh:
 setup(
     name='pymchain',
     version="0.1",
-    description='Python Markov Chains',
+    description='Python Markov Chain',
     python_requires='>=3.8',
     author='Yurasov Nikita',
     author_email='n.yurasov@yahoo.com',
