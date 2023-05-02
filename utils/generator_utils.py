@@ -1,21 +1,24 @@
-def random_stochastic_vector(n: int, left_bound=0, right_bound=999, seed=None):
+import numpy as np
+
+
+def random_stochastic_vector(n: int, left_bound: int = 0, right_bound: int = 999, seed=None):
     """
-    Функция создания стахостического вектора из полиномиального распределения с количество элементов <n>.
+    Creating a stochastic vector from a polynomial distribution with the number of elements <n>.
     Parameters
     ----------
     n : int
-        Количество элементов для полиномиальной схемы
+        number of elements for a polynomial scheme
     left_bound : int
-        Левая граница
+        left bound of precision
     right_bound : int
-        Правая граница
+        right bound of precision
     seed : optional
-        Зерно ГПСЧ
+        PRNG seed
 
     Returns
     -------
     np.ndarray
-        Стахостический вектор
+        stochastic vector
     """
     rng = np.random.default_rng(seed=seed)
     random_int_vec = np.zeros(n)
