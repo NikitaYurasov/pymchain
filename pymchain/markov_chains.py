@@ -3,40 +3,7 @@ import numpy as np
 from tqdm import tqdm
 from loguru import logger
 from typing import Union, List
-from numba import jit, prange
-from utils.generator_utils import random_stochastic_vector
-
-
-@jit(['uint64[:](uint64, float64[:])'])
-def generate_multinomial_rv(n: int, p_vec: Union[np.ndarray, list]):
-    """
-    A function for modeling a sample of size n from a polynomial distribution.
-    For more understanding, see Ivchenko G.I., Medvedev Yu.I. - "Mathematical statistics" paragraph about modeling
-    of a polynomial distribution.
-    Parameters
-    ----------
-    n : int
-        sample size
-    p_vec : np.ndarray | List
-        probability vector
-
-    Returns
-    -------
-    np.ndarray
-        array of sorted selections by elements
-    """
-    seq = np.zeros(p_vec.shape[0], dtype=np.uint64)
-    cum_sum = np.append(np.array([0]), np.cumsum(p_vec))
-    for _ in prange(n):
-        u = np.random.random()
-        for j in range(cum_sum.shape[0] - 1):
-            if j == 0 and cum_sum[j] <= u <= cum_sum[j + 1]:
-                seq[0] += 1
-                break
-            elif cum_sum[j] < u <= cum_sum[j + 1]:
-                seq[j] += 1
-                break
-    return seq
+from utils import random_stochastic_vector, generate_multinomial_rv
 
 
 class MarkovChain:
@@ -57,8 +24,10 @@ class MarkovChain:
         probability vector for generating a random tensor
     transition_tensor : np.ndarray | List, optional
         transition Tensor
-    seed : optional
-        PRNG seed
+    prng : optional
+        PRNG object
+    prng_seed : optional
+        seed for default deterministic PRNG
     iterations_for_tensor : int
         the number of iterations when generating a sample from a polynomial distribution
     alphabet : np.ndarray | List, optional
@@ -71,9 +40,10 @@ class MarkovChain:
         input_p: Union[np.ndarray, List],
         transition_pvals: Union[np.ndarray, List] = None,
         transition_tensor: Union[np.ndarray, List] = None,
-        seed=None,
         iterations_for_tensor: int = 1000,
         alphabet: Union[np.ndarray, List] = None,
+        prng=None,
+        prng_seed=None,
     ):
         if depth < 1 or isinstance(depth, float):
             raise ValueError(f'The depth attribute should be integer and >= 1, got {depth}')
@@ -81,11 +51,12 @@ class MarkovChain:
             raise TypeError(f'Type of input vector must be <list> or <np.ndarray>, got {type(input_p)}')
         if isinstance(input_p, list):
             input_p = np.array(input_p)
+
         self.depth = depth
         self.input_p = input_p
         self.n = len(input_p)
         self._transitions_pvals = transition_pvals
-        self._rng = np.random.default_rng(seed=seed)
+        self._prng = prng or np.random.default_rng(seed=prng_seed)
         if iterations_for_tensor < 1 or isinstance(iterations_for_tensor, float):
             raise ValueError(f'Number of iterations must be integer and >= 1, got {iterations_for_tensor}')
         self.iter_for_tensor = iterations_for_tensor
@@ -95,9 +66,9 @@ class MarkovChain:
         if transition_tensor is None:
             if transition_pvals is None:
                 logger.warning('Transition pvals will be generated from polynomial distribution')
-                transition_pvals = random_stochastic_vector(len(input_p), seed=seed)
+                transition_pvals = random_stochastic_vector(len(input_p), prng=self._prng)
             if len(input_p) != len(transition_pvals):
-                raise AttributeError(
+                raise ValueError(
                     f'Mismatch at input vector and transition pvals, got {len(input_p)} and '
                     f'{len(transition_pvals)} lengths corresponding'
                 )
@@ -113,40 +84,6 @@ class MarkovChain:
         self.symbols = alphabet
 
         self.sequence = None
-
-    def get_block_sequence(self, block_len=64):
-        """
-        Функция возвращает преобразованную последовательность в блоках с заданной длиной <block_len>
-        Parameters
-        ----------
-        block_len : int
-            Длина блока
-
-        Returns
-        -------
-        np.ndarray
-            Двочиная последовательность
-        """
-        array = np.zeros(self.sequence.size * block_len, dtype=np.uint8)
-        for i in range(self.sequence.size):
-            block = array[block_len * i : block_len * i + block_len]
-            num = self.sequence[i]
-            p = block_len - 1
-            while num > 0:
-                block[p] = num % 2
-                num //= 2
-                p -= 1
-        return array
-
-    def get_int_sequence(self):
-        """
-        Функция возвращает смоделированную последовательность в виде <int> элементов
-        Returns
-        -------
-        np.ndarray
-            Последовательность
-        """
-        return self.sequence
 
     def _set_transition_tensor(self, tensor: Union[np.ndarray, List], rel_tol: float = 1e-6):
         """
@@ -207,7 +144,7 @@ class MarkovChain:
         index_3d = [0] * (self.depth + 1)
         for _ in tqdm(range(self.n**self.depth), desc='Transition Tensor Generation'):
             rand_perm = generate_multinomial_rv(self.iter_for_tensor, self._transitions_pvals) / self.iter_for_tensor
-            np.random.shuffle(rand_perm)
+            self._prng.shuffle(rand_perm)
             for j in range(self.n):
                 matrix.itemset(tuple(index_3d), rand_perm[j])
                 index_3d = self._update_3d_index(index_3d)
@@ -218,7 +155,7 @@ class MarkovChain:
         """
         Checks whether a uniformly distributed random variable belongs to an interval depending on the position
         of the interval.
-        For more understanding, see Ivchenko G.I., Medvedev Yu.I. - "Mathematical statistics" section about modeling
+        For more information, see Ivchenko G.I., Medvedev Yu.I. - "Mathematical statistics" section about modeling
         of polynomial distribution and Markov chains.
         Parameters
         ----------
@@ -252,7 +189,7 @@ class MarkovChain:
         start_transitions = np.empty(self.depth, dtype=np.uint64)
         intervals = np.append(np.array([0]), np.cumsum(self.input_p))
         for i in range(self.depth):
-            u = self._rng.random()
+            u = self._prng.random()
             first_iter = True
             for j in range(intervals.shape[0] - 1):
                 if j != 0:
@@ -279,7 +216,7 @@ class MarkovChain:
         for i in range(prev_transitions.shape[0]):
             vector = vector[prev_transitions[i]]
         intervals = np.append(np.array([0]), np.cumsum(vector))
-        u = self._rng.random()
+        u = self._prng.random()
         first_iter = True
         new_transition = -1
         for j in range(intervals.shape[0] - 1):
