@@ -1,3 +1,7 @@
+[tool.black]
+line-length = 120
+skip-string-normalization = true
+
 [tool.poetry]
 name = "pymchain"
 version = "0.1.0"
@@ -9,12 +13,13 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.9"
 numba = "^0.56"
-numpy = ">=1.21.0"
-tqdm = ">=4.61.1"
+numpy = "^1.23.0"
+tqdm = "^4.65.0"
 loguru = "^0.7.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"
+black = { extras = ["d"], version = "^23.3.0" }
 
 [build-system]
 requires = ["poetry-core"]
